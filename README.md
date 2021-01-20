@@ -1,2 +1,3 @@
 # challengeR
-Repository for hive-mind solutions to R programming challenges
+
+A repository for hive-mind solutions to R programming challenges
