@@ -1,0 +1,134 @@
+---
+title: "Challenge 1"
+author: "Kelsey Gonzalez"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Description
+
+This is a data-wrangling challenge. The main goal is to produce row-wise sums
+based on a suite of conditions. 
+
+## Data: 
+
+The data have the form:
+
+| ID | a | b | ... | a_type      | ... |    e_type   | ... | a_1 | a_2 | ... | e_4 | e_5 |
+|:---|---|---|-----|-------------|-----|-------------|-----|-----|-----|-----|-----|-----|
+|  1 | 0 | 0 | ... | "in-person" | ... | "online"    | ... |  0  |  0  | ... |  1  |  0  |
+|  2 | 1 | 0 | ... | "in-person" | ... | "in-person" | ... |  0  |  0  | ... |  0  |  0  |
+
+## Goal
+
+Create a variable which is the sum of (letter)_1 to (letter)_4, where (letter)
+is a letter of the alphabet (e.g. "a", "b"). Values from each (letter) are 
+_only_ included when the following conditions are true:
+
+1. The value in the (letter) column is 1
+2. The value in the (letter)_type column is "in-person"
+
+For example, in the mock data set below, for the first row (ID = 1), values in 
+`b`, `d`, and `e` columns have a value of 1 (meeting condition 1, above). Among 
+those three (letters), only `e_type` has a value of "in-person" (meeting 
+condition 2, above) so the sum should be computed by `e_1` + `e_2` + `e_3` + `e_4`. 
+
+Is there a tidy way to do this?
+
+## Data
+
+To create the mock data set, 
+
+```{r mock-data-creation}
+mockdf <- data.frame(matrix(ncol = 36, nrow = 10))
+X1 <- letters[1:5]
+X2 <- paste(letters[1:5], "type", sep = "_")
+X3 <- paste(rep(x = letters[1:5], each = 5), 1:5, sep = "_")
+names(mockdf)<- c("ID", X1, X2, X3)
+mockdf$ID <- 1:10
+set.seed(1) # To ensure reproducible mock data sets
+for (i in 2:6) { 
+  mockdf[, i] <- sample(x = c(0,1), replace = TRUE)
+}
+for (i in 7:11) { 
+  mockdf[, i] <- sample(x = c("in-person", "online"), replace = TRUE)
+}
+for (i in 12:36) { 
+  mockdf[,i] = sample(x = c(0,1), replace = TRUE)
+}
+```
+
+## Breadcrumbs
+
+1. The dplyr package has several relevant data-wrangling functions. The `across` 
+function may be particularly useful, in combination with `starts_with`.
+2. When tackling the challenge, consider what the penultimate data might look 
+like. The final data will be two-columns, with an ID and a sum. What would the 
+data right _before_ this step look like? That is, what form would the data take 
+to make the summation "easy."
+3. While the ultimate solution may be a tidy one, getting there may require a 
+trip through the valley of iteration. That is, it might take writing a `for` 
+loop first before you can figure out how to do it the ~~Hadley~~ tidyverse way.
+4. The first step might be to create a data set that replaces (letter)_1 through
+(letter)_4 with the sum of those values; it makes for a slighly more wieldy (is 
+that a word?) data set. That is, instead of a data set with columns `a_1`, 
+`a_2`, ..., `a_5`, it only has `a_sum = sum(a_1, a_2, a_3, a_4)`. Whether or 
+not the sum is used can be a decision further downstream. For a single (letter), 
+this can be done via
+`mockdf %>% rowwise() %>% mutate(a_sum = sum(across(num_range(prefix = "a_", range = 1:4))))`
+Employing regular expressions might make it possible to do this for all 
+(letter)s...
+5. A word of caution: be sure to build-in cases where _none_ of the (letter)s 
+meet both criteria (coder's choice as to what to do in those cases (`0` or 
+`NA`))
+
+
+Start: 
+| ID | a | b | ... | a_type      | ... |    e_type   | ... | a_1 | a_2 | ... | e_4 | e_5 |
+|:---|---|---|-----|-------------|-----|-------------|-----|-----|-----|-----|-----|-----|
+|  1 | 0 | 0 | ... | "in-person" | ... | "online"    | ... |  0  |  0  | ... |  1  |  0  |
+|  2 | 1 | 0 | ... | "in-person" | ... | "in-person" | ... |  0  |  0  | ... |  0  |  0  |
+
+```{r}
+midpoint <- mockdf %>% 
+  pivot_longer(cols = c(a_type:e_type), names_to = "alter_type", values_to = "type") %>% 
+  pivot_longer(cols = c(a:e), names_to = "alter", values_to = "tie_strength") %>% 
+  pivot_longer(cols = c(a_1:e_5), names_pattern = "(.)_(.)", names_to = c("alter_q", "question")) %>%  
+  pivot_wider(id_cols = c(ID, alter_type, type, alter,tie_strength, alter_q), 
+              names_from = "question",  names_glue = "q{question}",
+              values_from = "value") %>% 
+
+  mutate(alter_type = str_replace(alter_type, "_type", "")) %>% 
+    filter(alter == alter_q ,
+           alter == alter_type)  %>% 
+  select(ID, alter, tie_strength, type, q1:q5)
+
+midpoint
+```
+
+
+Mid1:
+| ID | Alter | type        | ... |    type     | ... | q1  | q2  | q3  | q4  | q5  |
+|:---|-------|-------------|-----|-------------|-----|-----|-----|-----|-----|-----|
+|  1 | a     | "in-person" | ... | "online"    | ... |  0  |  0  |  0  |  1  |  0  |
+|  2 | b     | "in-person" | ... | "in-person" | ... |  0  |  0  |  0  |  0  |  0  |
+
+```{r}
+midpoint %>%  
+  filter(type == "in-person",
+         tie_strength == 1) %>% 
+  select(-type) %>% 
+  rowwise(ID) %>% 
+  mutate(sum = sum(c_across(starts_with("q")))) %>% 
+  select(-starts_with("q"))
+```
+
+Final:
+
+| ID | Alter | Sum | 
+|:---|-------|-----|
+|  1 | 0     | ... | 
+|  2 | 1     | ... | 
