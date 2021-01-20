@@ -6,6 +6,9 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+suppressPackageStartupMessages(library(tidyverse))
+# Suppress summarise info
+options(dplyr.summarise.inform = FALSE)
 ```
 
 # Description
@@ -32,9 +35,9 @@ _only_ included when the following conditions are true:
 2. The value in the (letter)_type column is "in-person"
 
 For example, in the mock data set below, for the first row (ID = 1), values in 
-`b`, `d`, and `e` columns have a value of 1 (meeting condition 1, above). Among 
-those three (letters), only `e_type` has a value of "in-person" (meeting 
-condition 2, above) so the sum should be computed by `e_1` + `e_2` + `e_3` + `e_4`. 
+`c` and `e` columns have a value of 1 (meeting condition 1, above). Between 
+those two (letters), only `c_type` has a value of "in-person" (meeting 
+condition 2, above) so the sum should be computed by `c_1` + `c_2` + `c_3` + `c_4`. 
 
 Is there a tidy way to do this?
 
@@ -61,38 +64,26 @@ for (i in 12:36) {
 }
 ```
 
-## Breadcrumbs
+# Solution
 
-1. The dplyr package has several relevant data-wrangling functions. The `across` 
-function may be particularly useful, in combination with `starts_with`.
-2. When tackling the challenge, consider what the penultimate data might look 
-like. The final data will be two-columns, with an ID and a sum. What would the 
-data right _before_ this step look like? That is, what form would the data take 
-to make the summation "easy."
-3. While the ultimate solution may be a tidy one, getting there may require a 
-trip through the valley of iteration. That is, it might take writing a `for` 
-loop first before you can figure out how to do it the ~~Hadley~~ tidyverse way.
-4. The first step might be to create a data set that replaces (letter)_1 through
-(letter)_4 with the sum of those values; it makes for a slighly more wieldy (is 
-that a word?) data set. That is, instead of a data set with columns `a_1`, 
-`a_2`, ..., `a_5`, it only has `a_sum = sum(a_1, a_2, a_3, a_4)`. Whether or 
-not the sum is used can be a decision further downstream. For a single (letter), 
-this can be done via
-`mockdf %>% rowwise() %>% mutate(a_sum = sum(across(num_range(prefix = "a_", range = 1:4))))`
-Employing regular expressions might make it possible to do this for all 
-(letter)s...
-5. A word of caution: be sure to build-in cases where _none_ of the (letter)s 
-meet both criteria (coder's choice as to what to do in those cases (`0` or 
-`NA`))
-
+Provided by [Kelsey Gonzalez](https://github.com/kelseygonzalez)
 
 Start: 
+
 | ID | a | b | ... | a_type      | ... |    e_type   | ... | a_1 | a_2 | ... | e_4 | e_5 |
 |:---|---|---|-----|-------------|-----|-------------|-----|-----|-----|-----|-----|-----|
-|  1 | 0 | 0 | ... | "in-person" | ... | "online"    | ... |  0  |  0  | ... |  1  |  0  |
-|  2 | 1 | 0 | ... | "in-person" | ... | "in-person" | ... |  0  |  0  | ... |  0  |  0  |
+|  1 | 0 | 0 | ... | "in-person" | ... | "online"    | ... |  0  |  0  | ... |  1  |  1  |
+|  2 | 1 | 0 | ... | "in-person" | ... | "in-person" | ... |  0  |  0  | ... |  0  |  1  |
 
-```{r}
+_Note_: The table above reflects the _shape_ of the data at this point; actual 
+data values may differ.
+
+## Step 1
+
+Pivot data so a row includes data from a single (letter); assuming value in 
+each (letter) column refers to the tie strength (and names column accordingly).
+
+```{r pivot-alters}
 midpoint <- mockdf %>% 
   pivot_longer(cols = c(a_type:e_type), names_to = "alter_type", values_to = "type") %>% 
   pivot_longer(cols = c(a:e), names_to = "alter", values_to = "tie_strength") %>% 
@@ -111,24 +102,59 @@ midpoint
 
 
 Mid1:
+
 | ID | Alter | type        | ... |    type     | ... | q1  | q2  | q3  | q4  | q5  |
 |:---|-------|-------------|-----|-------------|-----|-----|-----|-----|-----|-----|
 |  1 | a     | "in-person" | ... | "online"    | ... |  0  |  0  |  0  |  1  |  0  |
-|  2 | b     | "in-person" | ... | "in-person" | ... |  0  |  0  |  0  |  0  |  0  |
+|  2 | b     | "in-person" | ... | "in-person" | ... |  0  |  0  |  0  |  1  |  1  |
 
-```{r}
-midpoint %>%  
+_Note_: The table above reflects the _shape_ of the data at this point; actual 
+data values may differ.
+
+## Step 2
+
+Perform sums based on two conditions described in challenge (tie strength 
+equals 1 and type is "in-person")
+
+```{r sum-alters}
+alter_sums <- midpoint %>%  
   filter(type == "in-person",
          tie_strength == 1) %>% 
   select(-type) %>% 
   rowwise(ID) %>% 
-  mutate(sum = sum(c_across(starts_with("q")))) %>% 
+  mutate(sum = sum(c_across(num_range(prefix = "q", range = 1:4)))) %>%
   select(-starts_with("q"))
+
+alter_sums
 ```
 
-Final:
+Per-alter sums:
 
-| ID | Alter | Sum | 
-|:---|-------|-----|
-|  1 | 0     | ... | 
-|  2 | 1     | ... | 
+| ID | alter | tie_strength | sum | 
+|:---|-------|--------------|-----|
+|  1 | c     | 1            | 3   | 
+|  2 | a     | 1            | 0   | 
+|  2 | e     | 1            | 3   | 
+
+_Note_: The table above reflects the _shape_ of the data at this point; actual 
+data values may differ.
+
+## Step 3
+
+Sum per-alter values for each ID.
+
+```{r sum-ids}
+final_sums <- alter_sums %>%
+  group_by(ID) %>%
+  summarize(sum = sum(sum)) # My apologies. jcoliver is to blame
+
+final_sums
+```
+
+Final sums for each ID:
+
+| ID | sum | 
+|:---|-----|
+|  1 | 3   | 
+|  2 | 3   | 
+|  3 | 3   | 
